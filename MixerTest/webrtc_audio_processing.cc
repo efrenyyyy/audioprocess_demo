@@ -4,6 +4,7 @@
 #include "webrtc/modules/audio_conference_mixer/source/audio_conference_mixer_impl.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/utility/include/audio_frame_operations.h"
+#include "webrtc/common_audio/resampler/include/resampler.h"
 
 void InitAudioProcessing(webrtc::AudioProcessing *apm)
 {
@@ -50,12 +51,14 @@ void DoMixFrames(webrtc::AudioFrame* mixed_frame, webrtc::AudioFrame* frame, boo
 void AudioProcessWork(webrtc::AudioProcessing *apm)
 {
 	int16_t data[80], data2[80];
+	int16_t outbuf[4096];
 	int capture_level = 255;
 	int stream_has_voice;
 	int ns_speech_prob;
 	int ret = 80, length = 0;
 	webrtc::AudioFrame mixed_frame;
 	webrtc::AudioFrame frame;
+	webrtc::Resampler resample;
 
 	webrtc::StreamConfig conf(8000, 1, false);
 
@@ -85,9 +88,15 @@ void AudioProcessWork(webrtc::AudioProcessing *apm)
 		//stream_has_voice = apm->voice_detection()->stream_has_voice();
 		//ns_speech_prob = apm->noise_suppression()->speech_probability();
 		//fwrite(pdata, sizeof(float), ret, dest);
-		fwrite(mixed_frame.data_, sizeof(int16_t), 80, dest);
+		size_t outLen;
+		webrtc::AudioFrameOperations::MonoToStereo(&mixed_frame);
+
+		resample.Reset(8000, 32000, 2);
+		resample.Push(mixed_frame.data_, mixed_frame.samples_per_channel_*mixed_frame.num_channels_, outbuf, 4096, outLen);
+
+		fwrite(outbuf, sizeof(int16_t), outLen, dest);
 		length += ret;
-		printf("read %d samples already %d\n", ret, length);
+		printf("read %d samples already %d, outLen %d\n", ret, length, outLen);
 	}
 	fclose(fp);
 	fclose(fp2);
@@ -95,10 +104,8 @@ void AudioProcessWork(webrtc::AudioProcessing *apm)
 }
 
 
-void WorkMixer()
+void DoNs()
 {
-	webrtc::AudioFrame mixed_frame;
-	webrtc::AudioFrame frame;
 
 
 }
