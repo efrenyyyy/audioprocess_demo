@@ -64,12 +64,13 @@ void AudioProcessWork(webrtc::AudioProcessing *apm)
 
 	FILE * fp = fopen("out.pcm", "rb");
 	FILE * fp2 = fopen("speaker.pcm", "rb");
-	FILE * dest = fopen("audio_1C_8K_16bit_proess.pcm", "wb");
+	FILE * dest = fopen("audio_2C_8K_16bit_process.pcm", "wb");
 
 	apm->set_stream_delay_ms(0); //local file is 0,remote is delay = (t_render - t_analyze) + (t_process - t_capture)
 	apm->echo_cancellation()->set_stream_drift_samples(0);
 	while (ret > 0)
 	{
+		size_t outLen;
 		ret = fread(data, sizeof(int16_t), 80, fp);
 		fread(data2, sizeof(int16_t), 80, fp2);
 
@@ -77,24 +78,25 @@ void AudioProcessWork(webrtc::AudioProcessing *apm)
 		frame.UpdateFrame(0, 0, (const int16_t *)data2, 80, 8000, webrtc::AudioFrame::kNormalSpeech, webrtc::AudioFrame::kVadActive, 1);
 
 		DoMixFrames(&mixed_frame, &frame, true);
+		
+		float * array = (float *)mixed_frame.data_;
+		float * const pdata = array;
+		const float *const *ptr = &pdata;
+		apm->gain_control()->set_stream_analog_level(capture_level);
+		apm->AnalyzeReverseStream(ptr, 80, 8000, webrtc::AudioProcessing::ChannelLayout::kMono);
+		apm->ProcessStream(ptr, conf, conf, &pdata);
+		capture_level = apm->gain_control()->stream_analog_level();
+		stream_has_voice = apm->voice_detection()->stream_has_voice();
+		ns_speech_prob = apm->noise_suppression()->speech_probability();
+		//fwrite(pdata, sizeof(int16_t), outLen, dest);
 
-		//float * array = data;
-		//float * const pdata = array;
-		//const float *const *ptr = &pdata;
-		//apm->gain_control()->set_stream_analog_level(capture_level);
-		//apm->AnalyzeReverseStream(ptr, 80, 8000, webrtc::AudioProcessing::ChannelLayout::kMono);
-		//apm->ProcessStream(ptr, conf, conf, &pdata);
-		//capture_level = apm->gain_control()->stream_analog_level();
-		//stream_has_voice = apm->voice_detection()->stream_has_voice();
-		//ns_speech_prob = apm->noise_suppression()->speech_probability();
-		//fwrite(pdata, sizeof(float), ret, dest);
-		size_t outLen;
 		webrtc::AudioFrameOperations::MonoToStereo(&mixed_frame);
+		//resample.Reset(8000, 48000, 2);
+		//resample.Push(mixed_frame.data_, mixed_frame.samples_per_channel_*mixed_frame.num_channels_, outbuf, 4096, outLen);
 
-		resample.Reset(8000, 32000, 2);
-		resample.Push(mixed_frame.data_, mixed_frame.samples_per_channel_*mixed_frame.num_channels_, outbuf, 4096, outLen);
-
-		fwrite(outbuf, sizeof(int16_t), outLen, dest);
+		outLen = mixed_frame.samples_per_channel_*mixed_frame.num_channels_;
+		fwrite(mixed_frame.data_, sizeof(int16_t), outLen, dest);
+		//fwrite(outbuf, sizeof(int16_t), outLen, dest);
 		length += ret;
 		printf("read %d samples already %d, outLen %d\n", ret, length, outLen);
 	}
@@ -103,12 +105,6 @@ void AudioProcessWork(webrtc::AudioProcessing *apm)
 	fclose(dest);
 }
 
-
-void DoNs()
-{
-
-
-}
 
 int main()
 {
